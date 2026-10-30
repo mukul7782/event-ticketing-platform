@@ -1,0 +1,165 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ORGANIZER
+  ADMIN
+}
+
+enum SeatStatus {
+  AVAILABLE
+  LOCKED
+  BOOKED
+  BLOCKED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  EXPIRED
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+model User {
+  id           String        @id @default(uuid())
+  email        String        @unique
+  passwordHash String
+  name         String
+  role         Role          @default(USER)
+  isVerified   Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  refreshTokens RefreshToken[]
+  bookings      Booking[]
+  organizedEvents Event[]     @relation("OrganizerEvents")
+
+  @@index([email])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
+}
+
+model Venue {
+  id        String   @id @default(uuid())
+  name      String
+  location  String
+  capacity  Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events    Event[]
+  seats     Seat[]
+}
+
+model Event {
+  id          String   @id @default(uuid())
+  title       String
+  description String
+  startTime   DateTime
+  endTime     DateTime
+  venueId     String
+  venue       Venue    @relation(fields: [venueId], references: [id])
+  organizerId String
+  organizer   User     @relation("OrganizerEvents", fields: [organizerId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  seats       Seat[]
+  bookings    Booking[]
+
+  @@index([venueId])
+  @@index([organizerId])
+  @@index([startTime])
+}
+
+model Seat {
+  id         String     @id @default(uuid())
+  venueId    String
+  venue      Venue      @relation(fields: [venueId], references: [id])
+  eventId    String
+  event      Event      @relation(fields: [eventId], references: [id])
+  seatNumber String
+  rowNumber  String
+  section    String
+  price      Decimal    @db.Decimal(10, 2)
+  status     SeatStatus @default(AVAILABLE)
+  version    Int        @default(1)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  bookingItems BookingItem[]
+
+  @@unique([eventId, section, rowNumber, seatNumber])
+  @@index([eventId, status])
+}
+
+model Booking {
+  id            String        @id @default(uuid())
+  userId        String
+  user          User          @relation(fields: [userId], references: [id])
+  eventId       String
+  event         Event         @relation(fields: [eventId], references: [id])
+  totalAmount   Decimal       @db.Decimal(10, 2)
+  status        BookingStatus @default(PENDING)
+  expiresAt     DateTime
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  items         BookingItem[]
+  payment       Payment?
+
+  @@index([userId])
+  @@index([eventId])
+  @@index([status, expiresAt])
+}
+
+model BookingItem {
+  id        String   @id @default(uuid())
+  bookingId String
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  seatId    String
+  seat      Seat     @relation(fields: [seatId], references: [id])
+  price     Decimal  @db.Decimal(10, 2)
+
+  @@unique([bookingId, seatId])
+  @@index([seatId])
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  bookingId     String        @unique
+  booking       Booking       @relation(fields: [bookingId], references: [id])
+  amount        Decimal       @db.Decimal(10, 2)
+  status        PaymentStatus @default(PENDING)
+  transactionId String?       @unique
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([bookingId])
+  @@index([transactionId])
+}
